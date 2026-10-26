@@ -1,0 +1,198 @@
+{
+  "info": {
+    "name": "Credit Desk — демо E2E",
+    "description": "Коллекция запросов для проверки сквозного сценария: заявка → проверки → решение → принятие → подписание демо-кодом → смоделированная выдача. Демо-PIN передаётся в заголовке X-Demo-Pin: клиент 1234, банк 0007. Запустите коллекцию в Postman Runner — заявка и код подписания сохраняются автоматически.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8000" },
+    { "key": "client_pin", "value": "1234" },
+    { "key": "bank_pin", "value": "0007" },
+    { "key": "app_ref", "value": "ALF-26-0003" },
+    { "key": "signing_code", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "01 · Служебные",
+      "item": [
+        { "name": "Health", "request": { "method": "GET", "url": "{{base_url}}/health" } },
+        { "name": "Продукты и ставки", "request": { "method": "GET", "url": "{{base_url}}/api/products" } },
+        { "name": "Карта состояний", "request": { "method": "GET", "url": "{{base_url}}/api/state-machine" } }
+      ]
+    },
+    {
+      "name": "02 · Клиент: заявка",
+      "item": [
+        {
+          "name": "Создать заявку",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.application_id) {",
+                  "  pm.collectionVariables.set('app_ref', json.application_id);",
+                  "  pm.test('application_id сохранён: ' + json.application_id, () => pm.expect(json.status).to.eql('SUBMITTED'));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Demo-Pin", "value": "{{client_pin}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"company_name\": \"ООО «Ромашка»\",\n  \"inn\": \"7700123456\",\n  \"product\": \"Оборотное финансирование\",\n  \"amount\": 2400000,\n  \"term_months\": 18,\n  \"purpose\": \"Пополнение оборотных средств\",\n  \"annual_revenue\": 18000000,\n  \"concentration_pct\": 35,\n  \"period_mismatch\": false,\n  \"missing_bki\": false\n}"
+            },
+            "url": "{{base_url}}/api/applications"
+          }
+        },
+        { "name": "Заявка по номеру", "request": { "method": "GET", "url": "{{base_url}}/api/applications/{{app_ref}}" } },
+        { "name": "График платежей", "request": { "method": "GET", "url": "{{base_url}}/api/applications/{{app_ref}}/schedule" } },
+        { "name": "Чек-лист документов", "request": { "method": "GET", "url": "{{base_url}}/api/applications/{{app_ref}}/checklist" } },
+        {
+          "name": "Загрузить документ",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "X-Demo-Pin", "value": "{{client_pin}}" }],
+            "body": { "mode": "formdata", "formdata": [{ "key": "file", "type": "file", "src": [] }] },
+            "url": "{{base_url}}/api/applications/{{app_ref}}/documents"
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 · Банк: проверки и решение",
+      "item": [
+        {
+          "name": "Запустить демо-проверки",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "X-Demo-Pin", "value": "{{bank_pin}}" }],
+            "url": "{{base_url}}/api/applications/{{app_ref}}/checks"
+          }
+        },
+        {
+          "name": "Запросить уточнения (ветка NEEDS_INFO)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Demo-Pin", "value": "{{bank_pin}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"message\": \"Пришлите расшифровку поступлений по контрагентам за 12 месяцев.\"\n}" },
+            "url": "{{base_url}}/api/applications/{{app_ref}}/request-info"
+          }
+        },
+        {
+          "name": "Зафиксировать решение — одобрить",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Demo-Pin", "value": "{{bank_pin}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"decision_type\": \"APPROVED\",\n  \"terms\": \"Сумма 2 400 000 ₽, срок 18 мес., ставка 16,9%\",\n  \"reason\": \"Показатели в норме, блокирующих сигналов нет, одобрение на заявленных условиях\"\n}" },
+            "url": "{{base_url}}/api/applications/{{app_ref}}/decision"
+          }
+        },
+        {
+          "name": "Зафиксировать решение — отказ (ветка)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Demo-Pin", "value": "{{bank_pin}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"decision_type\": \"REJECTED\",\n  \"terms\": \"\",\n  \"reason\": \"Долговая нагрузка выше демонстрационного порога 35% годовой выручки\"\n}" },
+            "url": "{{base_url}}/api/applications/{{app_ref}}/decision"
+          }
+        },
+        { "name": "Журнал аудита", "request": { "method": "GET", "url": "{{base_url}}/api/applications/{{app_ref}}/audit" } }
+      ]
+    },
+    {
+      "name": "04 · Сделка: принятие, подписание, выдача",
+      "item": [
+        {
+          "name": "Принять предложение",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "X-Demo-Pin", "value": "{{client_pin}}" }],
+            "url": "{{base_url}}/api/applications/{{app_ref}}/accept"
+          }
+        },
+        {
+          "name": "Получить демо-код подписания",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.code) pm.collectionVariables.set('signing_code', json.code);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "X-Demo-Pin", "value": "{{client_pin}}" }],
+            "url": "{{base_url}}/api/applications/{{app_ref}}/signing-code"
+          }
+        },
+        {
+          "name": "Подписать кодом",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Demo-Pin", "value": "{{client_pin}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"code\": \"{{signing_code}}\"\n}" },
+            "url": "{{base_url}}/api/applications/{{app_ref}}/sign"
+          }
+        },
+        {
+          "name": "Смоделированная выдача",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "X-Demo-Pin", "value": "{{client_pin}}" }],
+            "url": "{{base_url}}/api/applications/{{app_ref}}/disburse"
+          }
+        },
+        { "name": "Реквизиты выдачи", "request": { "method": "GET", "url": "{{base_url}}/api/applications/{{app_ref}}/disbursement" } }
+      ]
+    },
+    {
+      "name": "05 · ИИ-помощь сотруднику",
+      "item": [
+        {
+          "name": "ИИ-резюме заявки",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"application_ref\": \"{{app_ref}}\"\n}" },
+            "url": "{{base_url}}/api/ai/summary"
+          }
+        },
+        {
+          "name": "Пять ИИ-агентов",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"application_ref\": \"{{app_ref}}\"\n}" },
+            "url": "{{base_url}}/api/ai/agents"
+          }
+        }
+      ]
+    }
+  ]
+}

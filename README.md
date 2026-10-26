@@ -56,7 +56,7 @@ SIGNED → DISBURSED`, с ветками `NEEDS_INFO` (запрос уточне
 ## Требования к окружению
 
 * Docker 20.10+ и Docker Compose v2 — рекомендуемый способ запуска;
-  **либо** Python 3.12 (проверено на 3.12.x) с pip.
+  **либо** Python 3.15 с pip (для Windows используйте обновлённый `requirements.lock.txt`; `pandas` закреплён на версии 3.1.0 с готовыми колёсами для Python 3.15).
 * ОЗУ: достаточно обычного офисного ноутбука (сервисы лёгкие, LLM в поставку
   не входит; ориентир кейса ~12 ГБ относится к серверному запуску своей
   LLM, что опционально).
@@ -79,12 +79,32 @@ docker compose up --build
 
 ### Вариант 2 — локально без Docker
 
-```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.lock.txt        # или requirements.txt
-uvicorn api:app --host 0.0.0.0 --port 8000 &   # REST API (необязательно)
-streamlit run app.py --server.port 8501 --server.address 0.0.0.0
+**Windows CMD (Python 3.15):** из папки `credit-desk` выполните:
+
+```bat
+py -3.15 -m venv .venv
+.venv\\Scripts\\activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.lock.txt
 ```
+
+Затем откройте два окна CMD в папке проекта. В первом:
+
+```bat
+.venv\\Scripts\\activate
+python -m uvicorn api:app --host 127.0.0.1 --port 8000
+```
+
+Во втором:
+
+```bat
+.venv\\Scripts\\activate
+python -m streamlit run app.py --server.port 8501 --server.address 127.0.0.1
+```
+
+**Linux/macOS:** используйте `python -m venv .venv`, активируйте окружение командой `source .venv/bin/activate`, установите `pip install -r requirements.lock.txt`, затем запустите API и Streamlit в отдельных терминалах.
+
+Веб-интерфейс: http://localhost:8501. API: http://localhost:8000/docs.
 
 База `data/credit_desk.db` создаётся автоматически и наполняется пятью
 демо-заявками при первом запуске.
